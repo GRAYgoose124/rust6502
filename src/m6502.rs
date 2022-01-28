@@ -1,12 +1,12 @@
 extern crate itertools;
 extern crate hex;
 
-use itertools::Itertools;
 use hex::decode;
 use bitmatch::bitmatch;
+use std::fmt;
 
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 pub struct M6502 {
     pub pc: u16,
     pub ac: u8,
@@ -15,7 +15,7 @@ pub struct M6502 {
     pub sr: u8, // [NV-BDIZC]
     pub sp: u8,
 
-    pub ram: [u8; 256]
+    pub ram: [u8; 256 * 256]
 }
 
 
@@ -40,82 +40,106 @@ pub enum Instr {
     TXA, TXS, TAX, TSX, DEX, NOP
 }*/
 
+fn status(n: char) -> u8 {
+    match n {
+        'N' => { 0b10000000 },
+        'V' => { 0b01000000 },
+        '-' => { 0b00100000 },
+        'B' => { 0b00010000 },
+        'D' => { 0b00001000 },
+        'I' => { 0b00000100 },
+        'Z' => { 0b00000010 },
+        'C' => { 0b00000001 },
+        _ => { 0 }
+    }
+}
+
+#[allow(unused_variables)]
 impl M6502 {
     // Instructions
     // aaabbbcc - cc = 01
-    pub fn ORA(&self, mode: u8) {}
-    pub fn AND(&self, mode: u8) {}
-    pub fn EOR(&self, mode: u8) {}
-    pub fn ADC(&self, mode: u8) {}
-    pub fn STA(&self, mode: u8) {}
-    pub fn LDA(&self, mode: u8) {}
-    pub fn CMP(&self, mode: u8) {}
-    pub fn SBC(&self, mode: u8) {}
+    pub fn ORA(&mut self, mode: u8) {}
+    pub fn AND(&mut self, mode: u8) {}
+    pub fn EOR(&mut self, mode: u8) {}
+    pub fn ADC(&mut self, mode: u8) {}
+    pub fn STA(&mut self, mode: u8) {}
+    pub fn LDA(&mut self, mode: u8) {}
+    pub fn CMP(&mut self, mode: u8) {}
+    pub fn SBC(&mut self, mode: u8) {}
 
     // cc = 10
-    pub fn ASL(&self, mode: u8) {}
-    pub fn ROL(&self, mode: u8) {}
-    pub fn LSR(&self, mode: u8) {}
-    pub fn ROR(&self, mode: u8) {}
-    pub fn STX(&self, mode: u8) {}
-    pub fn LDX(&self, mode: u8) {}
-    pub fn DEC(&self, mode: u8) {}
-    pub fn INC(&self, mode: u8) {}
+    pub fn ASL(mut self, mode: u8) {}
+    pub fn ROL(mut self, mode: u8) {}
+    pub fn LSR(mut self, mode: u8) {}
+    pub fn ROR(mut self, mode: u8) {}
+    pub fn STX(mut self, mode: u8) {}
+    pub fn LDX(mut self, mode: u8) {}
+    pub fn DEC(mut self, mode: u8) {}
+    pub fn INC(mut self, mode: u8) {}
 
     // cc = 00
-    pub fn BIT(&self, mode: u8) {}
-    pub fn JMP(&self, mode: u8) {}
-    pub fn AJMP(&self, mode: u8) {}
-    pub fn STY(&self, mode: u8) {}
-    pub fn LDY(&self, mode: u8) {}
-    pub fn CPY(&self, mode: u8) {}
-    pub fn CPX(&self, mode: u8) {}
+    pub fn BIT(&mut self, mode: u8) {}
+    pub fn JMP(&mut self, mode: u8) {}
+    pub fn AJMP(&mut self, mode: u8) {}
+    pub fn STY(&mut self, mode: u8) {}
+    pub fn LDY(&mut self, mode: u8) {}
+    pub fn CPY(&mut self, mode: u8) {}
+    pub fn CPX(&mut self, mode: u8) {}
 
-    // xxy10000; branches x=neg,over,carry zero; cmp(x, y)
-    pub fn BPL(&self) {}
-    pub fn BMI(&self) {}
-    pub fn BVC(&self) {}
-    pub fn BVS(&self) {}
-    pub fn BCC(&self) {}
-    pub fn BCS(&self) {}
-    pub fn BNE(&self) {}
-    pub fn BEQ(&self) {}
+    // xxy10000; conditional branches x=neg,over,carry zero; cmp(x, y)
+    fn CBRANCH(&mut self, s: char, n: u8) {
+        // S = [NV-BDIZC], n=[01]
+        self.pc += 1; 
+
+        if (self.sr & status(s)) == n { 
+            self.pc = self.ram[self.pc as usize] as u16;
+        }
+    }
+    pub fn BPL(&mut self) { self.CBRANCH('N', 0) }
+    pub fn BMI(&mut self) { self.CBRANCH('N', 1) }
+    pub fn BVC(&mut self) { self.CBRANCH('V', 0) }
+    pub fn BVS(&mut self) { self.CBRANCH('V', 1) }
+    pub fn BCC(&mut self) { self.CBRANCH('C', 0) }
+    pub fn BCS(&mut self) { self.CBRANCH('C', 1) }
+    pub fn BNE(&mut self) { self.CBRANCH('Z', 0) }
+    pub fn BEQ(&mut self) { self.CBRANCH('Z', 1) }
 
     // no pattern
-    pub fn BRK(&self) {}
-    pub fn JSR(&self) {}
-    pub fn RTI(&self) {}
-    pub fn RTS(&self) {}
+    pub fn BRK(&mut self) {}
+    pub fn JSR(&mut self) {}
+    pub fn RTI(&mut self) {}
+    pub fn RTS(&mut self) {}
 
-    pub fn PHP(&self) {}
-    pub fn PLP(&self) {}
-    pub fn PHA(&self) {}
-    pub fn PLA(&self) {}
-    pub fn DEY(&self) {}
-    pub fn TAY(&self) {}
-    pub fn INY(&self) {}
-    pub fn INX(&self) {}
+    pub fn PHP(&mut self) {}
+    pub fn PLP(&mut self) {}
+    pub fn PHA(&mut self) {}
+    pub fn PLA(&mut self) {}
+    pub fn DEY(&mut self) {}
+    pub fn TAY(&mut self) {}
+    pub fn INY(&mut self) {}
+    pub fn INX(&mut self) {}
 
-    pub fn CLC(&self) {}
-    pub fn SEC(&self) {}
-    pub fn CLI(&self) {}
-    pub fn SEI(&self) {}
-    pub fn TYA(&self) {}
-    pub fn CLV(&self) {}
-    pub fn CLD(&self) {}
-    pub fn SED(&self) {}
+    pub fn CLC(&mut self) {}
+    pub fn SEC(&mut self) {}
+    pub fn CLI(&mut self) {}
+    pub fn SEI(&mut self) {}
+    pub fn TYA(&mut self) {}
+    pub fn CLV(&mut self) {}
+    pub fn CLD(&mut self) {}
+    pub fn SED(&mut self) {}
 
-    pub fn TXA(&self) {}
-    pub fn TXS(&self) {}
-    pub fn TAX(&self) {}
-    pub fn TSX(&self) {}
-    pub fn DEX(&self) {}
-    pub fn NOP(&self) {}
+    pub fn TXA(&mut self) {}
+    pub fn TXS(&mut self) {}
+    pub fn TAX(&mut self) {}
+    pub fn TSX(&mut self) {}
+    pub fn DEX(&mut self) {}
+    pub fn NOP(&mut self) {}
 }
+
 
 impl M6502 {
     #[bitmatch]
-    fn match_instr(&self, instr: u8) {
+    fn match_instr(&mut self, instr: u8) {
         #[bitmatch]
         match instr {
             "00000000" => self.BRK(),
@@ -201,7 +225,21 @@ impl M6502 {
         // hacked
         for _ in 0..10000 {
             self.match_instr(self.ram[self.pc as usize]);
+            if self.pc <= 0xFFFF { self.pc += 1 };
         }
     }
 }
 
+
+impl fmt::Debug for M6502 {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("M6502")
+            .field("pc", &format_args!("0x{:04x}", self.pc))
+            .field("ac", &format_args!("0x{:02x}", self.ac))
+            .field("x",  &format_args!("0x{:02x}", self.x ))
+            .field("y",  &format_args!("0x{:02x}", self.y ))
+            .field("sr", &format_args!("0x{:02x}", self.sr))
+            .field("sp", &format_args!("0x{:02x}", self.sp))
+            .finish()
+    }
+}
