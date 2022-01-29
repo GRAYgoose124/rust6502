@@ -6,14 +6,14 @@ use bitmatch::bitmatch;
 use std::fmt;
 
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct M6502 {
-    pub pc: u16,
-    pub ac: u8,
-    pub x: u8,
-    pub y: u8,
-    pub sr: u8, // [NV-BDIZC]
-    pub sp: u8,
+    pub pc: Box<u16>,
+    pub ac: Box<u8>,
+    pub x: Box<u8>,
+    pub y: Box<u8>,
+    pub sr: Box<u8>, // [NV-BDIZC]
+    pub sp: Box<u8>,
 
     pub ram: [u8; 256 * 256]
 }
@@ -47,18 +47,18 @@ enum Mode {
 
 impl M6502 {
     fn push(&mut self, byte: u8) {
-        self.sp += 1;
-        self.ram[0x100+self.sp as usize] = byte;
+        *self.sp = *self.sp + 1;
+        self.ram[0x100+*self.sp as usize] = byte;
     }
 
     fn pull(&mut self) -> u8 {
-        let sp = self.sp;
-        self.sp -= 1;
+        let sp = *self.sp;
+        *self.sp = *self.sp - 1;
 
         self.ram[0x100+sp as usize]
     }
 
-    fn status(self, n: char) -> u8 {
+    fn status(&self, n: char) -> u8 {
         match n {
             'N' => { 0b10000000 },
             'V' => { 0b01000000 },
@@ -72,74 +72,74 @@ impl M6502 {
         }
     }
 
-    fn mode01(self, mode: u8) -> u8 {
+    fn mode01(&self, mode: u8) -> u8 {
         match mode {
-            0 => { self.ram[(0x0000+self.ram[(self.pc+1) as usize]+self.y) as usize]}, // Mode::ZPXP
-            1 => { self.ram[(0x0000+self.ram[(self.pc+1) as usize]) as usize]}, // Mode::ZP
-            2 => { self.ram[(self.pc+1) as usize] }, // Mode::IMM
-            3 => { self.ram[(self.pc+1) as usize] + self.ram[((self.pc+2)<<1) as usize] }, // Mode::ABS
-            4 => { self.ram[(0x0000+self.ram[(self.pc+1) as usize]+self.x) as usize] }, // Mode::ZPY
-            5 => { self.ram[(0x0000+self.ram[(self.pc+1) as usize]+self.y) as usize] }, // Mode::ZPX
-            6 => { self.ram[(self.pc+1) as usize] + self.ram[((self.pc+2)<<1) as usize] + self.y }, // Mode::ABY
-            7 => { self.ram[(self.pc+1) as usize] + self.ram[((self.pc+2)<<1) as usize] + self.x }, // Mode::ABX
+            0 => {0}, // Mode::ZPXP
+            1 => {0}, // Mode::ZP
+            2 => {0}, // Mode::IMM
+            3 => {0}, // Mode::ABS
+            4 => {0}, // Mode::ZPY
+            5 => {0}, // Mode::ZPX
+            6 => {0}, // Mode::ABY
+            7 => {0}, // Mode::ABX
             _ => {0} // Mode::UKN
         }
     }
 }
 
 
-#[allow(unused_variables)]
+#[allow(unused_variables, unused_mut)]
 impl M6502 {
     // Instructions
     // aaabbbcc - cc = 01
     pub fn ORA(&mut self, mode: u8) { 
         let data = self.mode01(mode);
-        self.ac |= data;
+        *self.ac = *self.ac | data;
 
-        if self.ac & 0b10000000 == 1 { 
-            self.sr |= self.status('N');
+        if *self.ac & 0b10000000 == 1 { 
+            *self.sr = *self.sr | self.status('N');
         }
         
-        if self.ac == 0 {
-            self.sr |= self.status('Z');
+        if *self.ac == 0 {
+            *self.sr = *self.sr | self.status('Z');
         }
     }
 
     pub fn AND(&mut self, mode: u8) {
         let data = self.mode01(mode);
-        self.ac &= data;
+        *self.ac &= data;
 
-        if self.ac & 0b10000000 == 1 { 
-            self.sr |= self.status('N');
+        if *self.ac & 0b10000000 == 1 { 
+            *self.sr = *self.sr | self.status('N');
         }
         
-        if self.ac == 0 {
-            self.sr |= self.status('Z');
+        if *self.ac == 0 {
+            *self.sr = *self.sr | self.status('Z');
         }
     }
 
     pub fn EOR(&mut self, mode: u8) {
         let data = self.mode01(mode);
-        self.ac ^= data;
+        *self.ac = *self.ac ^ data;
 
-        if self.ac & 0b10000000 == 1 { 
-            self.sr |= self.status('N');
+        if *self.ac & 0b10000000 == 1 { 
+            *self.sr = *self.sr | self.status('N');
         }
         
-        if self.ac == 0 {
-            self.sr |= self.status('Z');
+        if *self.ac == 0 {
+            *self.sr = *self.sr | self.status('Z');
         }
     }
 
     pub fn ADC(&mut self, mode: u8) {
         let data = self.mode01(mode);
-        let sum = self.ac + data + (self.sr & self.status('C') );
-        self.ac = sum & 0xFF;
+        let sum = *self.ac + data + (*self.sr & self.status('C') );
+        *self.ac = sum & 0xFF;
 
-        if ( sum > 0xFF ) {
-            self.sr |= self.status('C');
+        if sum > 0xFF {
+            *self.sr = *self.sr | self.status('C');
         } else {
-            self.sr &= !self.status('C');
+            *self.sr = *self.sr & !self.status('C');
         }
     }
 
@@ -149,14 +149,14 @@ impl M6502 {
     pub fn SBC(&mut self, mode: u8) {}
 
     // cc = 10
-    pub fn ASL(mut self, mode: u8) {}
-    pub fn ROL(mut self, mode: u8) {}
-    pub fn LSR(mut self, mode: u8) {}
-    pub fn ROR(mut self, mode: u8) {}
-    pub fn STX(mut self, mode: u8) {}
-    pub fn LDX(mut self, mode: u8) {}
-    pub fn DEC(mut self, mode: u8) {}
-    pub fn INC(mut self, mode: u8) {}
+    pub fn ASL(&mut self, mode: u8) {}
+    pub fn ROL(&mut self, mode: u8) {}
+    pub fn LSR(&mut self, mode: u8) {}
+    pub fn ROR(&mut self, mode: u8) {}
+    pub fn STX(&mut self, mode: u8) {}
+    pub fn LDX(&mut self, mode: u8) {}
+    pub fn DEC(&mut self, mode: u8) {}
+    pub fn INC(&mut self, mode: u8) {}
 
     // cc = 00
     pub fn BIT(&mut self, mode: u8) {}
@@ -170,10 +170,10 @@ impl M6502 {
     // xxy10000; conditional branches x=neg,over,carry zero; cmp(x, y)
     fn CBRANCH(&mut self, s: char, n: u8) {
         // S = [NV-BDIZC], n=[01]
-        self.pc += 1; 
+        *self.pc += 1; 
 
-        if (self.sr & self.status(s)) == n { 
-            self.pc = self.ram[self.pc as usize] as u16;
+        if (*self.sr & self.status(s)) == n { 
+            *self.pc = self.ram[*self.pc as usize] as u16;
         }
     }
     pub fn BPL(&mut self) { self.CBRANCH('N', 0) }
@@ -220,9 +220,9 @@ impl M6502 {
 
 impl M6502 {
     #[bitmatch]
-    fn match_instr(&mut self, instr: u8) {
+    fn match_instr(&mut self, loc: usize) {
         #[bitmatch]
-        match instr {
+        match self.ram[loc] {
             "00000000" => self.BRK(),
             "00100000" => self.JSR(), // absolute JSR
             "01000000" => self.RTI(),
@@ -299,14 +299,12 @@ impl M6502 {
     }
 
     pub fn run(&mut self, prog: &str) {
-        let i = 0;
-
         self.ram[0..prog.len()/2].copy_from_slice(&decode(prog).unwrap());
 
         // hacked
         for _ in 0..10000 {
-            self.match_instr(self.ram[self.pc as usize]);
-            if self.pc <= 0xFFFF { self.pc += 1 };
+            self.match_instr(*self.pc as usize);
+            if *self.pc <= 0xFFFF { *self.pc += 1 };
         }
     }
 }
@@ -315,12 +313,12 @@ impl M6502 {
 impl fmt::Debug for M6502 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("M6502")
-            .field("pc", &format_args!("0x{:04x}", self.pc))
-            .field("ac", &format_args!("0x{:02x}", self.ac))
-            .field("x",  &format_args!("0x{:02x}", self.x ))
-            .field("y",  &format_args!("0x{:02x}", self.y ))
-            .field("sr", &format_args!("0x{:02x}", self.sr))
-            .field("sp", &format_args!("0x{:02x}", self.sp))
+            .field("pc", &format_args!("0x{:04x}", *self.pc))
+            .field("ac", &format_args!("0x{:02x}", *self.ac))
+            .field("x",  &format_args!("0x{:02x}", *self.x ))
+            .field("y",  &format_args!("0x{:02x}", *self.y ))
+            .field("sr", &format_args!("0x{:02x}", *self.sr))
+            .field("sp", &format_args!("0x{:02x}", *self.sp))
             .finish()
     }
 }
