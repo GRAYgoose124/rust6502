@@ -40,28 +40,109 @@ pub enum Instr {
     TXA, TXS, TAX, TSX, DEX, NOP
 }*/
 
-fn status(n: char) -> u8 {
-    match n {
-        'N' => { 0b10000000 },
-        'V' => { 0b01000000 },
-        '-' => { 0b00100000 },
-        'B' => { 0b00010000 },
-        'D' => { 0b00001000 },
-        'I' => { 0b00000100 },
-        'Z' => { 0b00000010 },
-        'C' => { 0b00000001 },
-        _ => { 0 }
+enum Mode {
+    ZPXP, ZP, IMM, ABS, ZPY, ZPX, ABY, ABX,
+    UKN
+}
+
+impl M6502 {
+    fn push(&mut self, byte: u8) {
+        self.sp += 1;
+        self.ram[0x100+self.sp as usize] = byte;
+    }
+
+    fn pull(&mut self) -> u8 {
+        let sp = self.sp;
+        self.sp -= 1;
+
+        self.ram[0x100+sp as usize]
+    }
+
+    fn status(self, n: char) -> u8 {
+        match n {
+            'N' => { 0b10000000 },
+            'V' => { 0b01000000 },
+            '-' => { 0b00100000 },
+            'B' => { 0b00010000 },
+            'D' => { 0b00001000 },
+            'I' => { 0b00000100 },
+            'Z' => { 0b00000010 },
+            'C' => { 0b00000001 },
+            _ => { 0 }
+        }
+    }
+
+    fn mode01(self, mode: u8) -> u8 {
+        match mode {
+            0 => { self.ram[(0x0000+self.ram[(self.pc+1) as usize]+self.y) as usize]}, // Mode::ZPXP
+            1 => { self.ram[(0x0000+self.ram[(self.pc+1) as usize]) as usize]}, // Mode::ZP
+            2 => { self.ram[(self.pc+1) as usize] }, // Mode::IMM
+            3 => { self.ram[(self.pc+1) as usize] + self.ram[((self.pc+2)<<1) as usize] }, // Mode::ABS
+            4 => { self.ram[(0x0000+self.ram[(self.pc+1) as usize]+self.x) as usize] }, // Mode::ZPY
+            5 => { self.ram[(0x0000+self.ram[(self.pc+1) as usize]+self.y) as usize] }, // Mode::ZPX
+            6 => { self.ram[(self.pc+1) as usize] + self.ram[((self.pc+2)<<1) as usize] + self.y }, // Mode::ABY
+            7 => { self.ram[(self.pc+1) as usize] + self.ram[((self.pc+2)<<1) as usize] + self.x }, // Mode::ABX
+            _ => {0} // Mode::UKN
+        }
     }
 }
+
 
 #[allow(unused_variables)]
 impl M6502 {
     // Instructions
     // aaabbbcc - cc = 01
-    pub fn ORA(&mut self, mode: u8) {}
-    pub fn AND(&mut self, mode: u8) {}
-    pub fn EOR(&mut self, mode: u8) {}
-    pub fn ADC(&mut self, mode: u8) {}
+    pub fn ORA(&mut self, mode: u8) { 
+        let data = self.mode01(mode);
+        self.ac |= data;
+
+        if self.ac & 0b10000000 == 1 { 
+            self.sr |= self.status('N');
+        }
+        
+        if self.ac == 0 {
+            self.sr |= self.status('Z');
+        }
+    }
+
+    pub fn AND(&mut self, mode: u8) {
+        let data = self.mode01(mode);
+        self.ac &= data;
+
+        if self.ac & 0b10000000 == 1 { 
+            self.sr |= self.status('N');
+        }
+        
+        if self.ac == 0 {
+            self.sr |= self.status('Z');
+        }
+    }
+
+    pub fn EOR(&mut self, mode: u8) {
+        let data = self.mode01(mode);
+        self.ac ^= data;
+
+        if self.ac & 0b10000000 == 1 { 
+            self.sr |= self.status('N');
+        }
+        
+        if self.ac == 0 {
+            self.sr |= self.status('Z');
+        }
+    }
+
+    pub fn ADC(&mut self, mode: u8) {
+        let data = self.mode01(mode);
+        let sum = self.ac + data + (self.sr & self.status('C') );
+        self.ac = sum & 0xFF;
+
+        if ( sum > 0xFF ) {
+            self.sr |= self.status('C');
+        } else {
+            self.sr &= !self.status('C');
+        }
+    }
+
     pub fn STA(&mut self, mode: u8) {}
     pub fn LDA(&mut self, mode: u8) {}
     pub fn CMP(&mut self, mode: u8) {}
@@ -91,7 +172,7 @@ impl M6502 {
         // S = [NV-BDIZC], n=[01]
         self.pc += 1; 
 
-        if (self.sr & status(s)) == n { 
+        if (self.sr & self.status(s)) == n { 
             self.pc = self.ram[self.pc as usize] as u16;
         }
     }
