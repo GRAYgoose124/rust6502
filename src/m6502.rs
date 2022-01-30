@@ -15,7 +15,7 @@ pub struct M6502 {
     pub sr: Box<u8>, // [NV-BDIZC]
     pub sp: Box<u8>,
 
-    pub ram: [u8; 256 * 256]
+    pub ram: [Box<u8>; 256 * 256]
 }
 
 
@@ -41,21 +41,21 @@ pub enum Instr {
 }*/
 
 enum Mode {
-    ZPXP, ZP, IMM, ABS, ZPY, ZPX, ABY, ABX,
+    ACC, IMM, ZPG, ZPX, ZPY, REL, ABS, ABX, ABY, IND, IXD, IDX,
     UKN
 }
 
 impl M6502 {
     fn push(&mut self, byte: u8) {
         *self.sp = *self.sp + 1;
-        self.ram[0x100+*self.sp as usize] = byte;
+        *self.ram[0x100+*self.sp as usize] = byte;
     }
 
     fn pull(&mut self) -> u8 {
         let sp = *self.sp;
         *self.sp = *self.sp - 1;
 
-        self.ram[0x100+sp as usize]
+        *self.ram[0x100+sp as usize]
     }
 
     fn status(&self, n: char) -> u8 {
@@ -72,17 +72,47 @@ impl M6502 {
         }
     }
 
-    fn mode01(&self, mode: u8) -> u8 {
+    fn mode(&mut self, mode: Mode) -> &mut Box<u8> {
         match mode {
-            0 => {0}, // Mode::ZPXP
-            1 => {0}, // Mode::ZP
-            2 => {0}, // Mode::IMM
-            3 => {0}, // Mode::ABS
-            4 => {0}, // Mode::ZPY
-            5 => {0}, // Mode::ZPX
-            6 => {0}, // Mode::ABY
-            7 => {0}, // Mode::ABX
-            _ => {0} // Mode::UKN
+            Mode::ACC => { &mut self.ac },
+            Mode::IMM => { &mut self.ram[(*self.pc+1) as usize]},
+            Mode::ZPG => { &mut self.ram[0x0000 + *self.ram[(*self.pc+1) as usize] as usize] },
+            Mode::ZPX => { &mut self.ram[(0x0000 + *self.ram[(*self.pc+1) as usize] + *self.x) as usize] },
+            Mode::ZPY => { &mut self.ram[(0x0000 + *self.ram[(*self.pc+1) as usize] + *self.y) as usize] },
+            Mode::REL => { &mut self.ram[(*self.pc as i16 + ((*self.pc+1) as i8) as i16) as usize]},
+            Mode::ABS => { &mut self.ram[((*self.pc+1) + (*self.pc+2)<<1) as usize]},
+            Mode::ABX => { &mut self.ram[((*self.pc+1) + (*self.pc+2)<<1 + *self.x) as usize]},
+            Mode::ABY => { &mut self.ram[((*self.pc+1) + (*self.pc+2)<<1 + *self.y) as usize]},
+            Mode::IND => { 
+                let lsb = *self.ram[((*self.pc+1) + (*self.pc+2)<<1) as usize];
+                let hsb = *self.ram[((*self.pc+1) + (*self.pc+2)<<1 + 1) as usize];
+                &mut self.ram[(lsb as u16 + (hsb as u16) << 1)  as usize]
+            }
+            Mode::IXD => {
+                let lsb = *self.ram[(*self.pc+1) as usize] + *self.x;
+                let hsb = *self.ram[(*self.pc+1) as usize] + *self.x;
+                &mut self.ram[((lsb as u16 + (hsb as u16) << 1) % 0xFF)  as usize]
+            },
+            Mode::IDX => {
+                let lsb = *self.ram[(*self.pc+1) as usize];
+                let hsb = *self.ram[(*self.pc+1) as usize] + 1;
+                &mut self.ram[((*self.ram[(lsb as u16 + (hsb as u16) << 1)  as usize] + *self.y) % 0xFF) as usize]
+            },
+            _ => { &mut self.ac }
+        }
+    }
+
+    fn mode01(&mut self, mode: u8 ) -> &Box<u8> {
+        match mode {
+            0 => { self.mode(Mode::IXD) }, // Mode::ZPXP
+            1 => { self.mode(Mode::ZPG) }, // Mode::ZP
+            2 => { self.mode(Mode::IMM) }, // Mode::IMM
+            3 => { self.mode(Mode::ABS) }, // Mode::ABS
+            4 => { self.mode(Mode::ZPY) }, // Mode::ZPY
+            5 => { self.mode(Mode::ZPX) }, // Mode::ZPX
+            6 => { self.mode(Mode::ABY) }, // Mode::ABY
+            7 => { self.mode(Mode::ABX) }, // Mode::ABX
+            _ => { self.mode(Mode::UKN) } // Mode::UKN
         }
     }
 }
@@ -93,7 +123,7 @@ impl M6502 {
     // Instructions
     // aaabbbcc - cc = 01
     pub fn ORA(&mut self, mode: u8) { 
-        let data = self.mode01(mode);
+        let data = **self.mode01(mode);
         *self.ac = *self.ac | data;
 
         if *self.ac & 0b10000000 == 1 { 
@@ -106,7 +136,7 @@ impl M6502 {
     }
 
     pub fn AND(&mut self, mode: u8) {
-        let data = self.mode01(mode);
+        let data = **self.mode01(mode);
         *self.ac &= data;
 
         if *self.ac & 0b10000000 == 1 { 
@@ -119,7 +149,7 @@ impl M6502 {
     }
 
     pub fn EOR(&mut self, mode: u8) {
-        let data = self.mode01(mode);
+        let data = **self.mode01(mode);
         *self.ac = *self.ac ^ data;
 
         if *self.ac & 0b10000000 == 1 { 
@@ -132,7 +162,7 @@ impl M6502 {
     }
 
     pub fn ADC(&mut self, mode: u8) {
-        let data = self.mode01(mode);
+        let data = **self.mode01(mode);
         let sum = *self.ac + data + (*self.sr & self.status('C') );
         *self.ac = sum & 0xFF;
 
@@ -173,7 +203,7 @@ impl M6502 {
         *self.pc += 1; 
 
         if (*self.sr & self.status(s)) == n { 
-            *self.pc = self.ram[*self.pc as usize] as u16;
+            *self.pc = *self.ram[*self.pc as usize] as u16;
         }
     }
     pub fn BPL(&mut self) { self.CBRANCH('N', 0) }
@@ -222,7 +252,7 @@ impl M6502 {
     #[bitmatch]
     fn match_instr(&mut self, loc: usize) {
         #[bitmatch]
-        match self.ram[loc] {
+        match *self.ram[loc] {
             "00000000" => self.BRK(),
             "00100000" => self.JSR(), // absolute JSR
             "01000000" => self.RTI(),
@@ -299,7 +329,9 @@ impl M6502 {
     }
 
     pub fn run(&mut self, prog: &str) {
-        self.ram[0..prog.len()/2].copy_from_slice(&decode(prog).unwrap());
+        for (i, byte) in decode(prog).unwrap().iter().enumerate() {
+            *(self.ram[(0x200+i) as usize]) = *byte;
+        }
 
         // hacked
         for _ in 0..10000 {
