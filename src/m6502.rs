@@ -102,7 +102,7 @@ impl M6502 {
         }
     }
 
-    fn mode01(&mut self, mode: u8 ) -> &Box<u8> {
+    fn mode01(&mut self, mode: u8 ) -> &mut Box<u8> {
         match mode {
             0 => { self.mode(Mode::IXD) }, // Mode::ZPXP
             1 => { self.mode(Mode::ZPG) }, // Mode::ZP
@@ -134,7 +134,6 @@ impl M6502 {
             *self.sr = *self.sr | self.status('Z');
         }
     }
-
     pub fn AND(&mut self, mode: u8) {
         let data = **self.mode01(mode);
         *self.ac &= data;
@@ -147,7 +146,6 @@ impl M6502 {
             *self.sr = *self.sr | self.status('Z');
         }
     }
-
     pub fn EOR(&mut self, mode: u8) {
         let data = **self.mode01(mode);
         *self.ac = *self.ac ^ data;
@@ -160,11 +158,10 @@ impl M6502 {
             *self.sr = *self.sr | self.status('Z');
         }
     }
-
     pub fn ADC(&mut self, mode: u8) {
         let data = **self.mode01(mode);
-        let sum = *self.ac + data + (*self.sr & self.status('C') );
-        *self.ac = sum & 0xFF;
+        let sum = *self.ac as u16 + data as u16 + (*self.sr & self.status('C') ) as u16;
+        *self.ac = (sum & 0xFF) as u8;
 
         if sum > 0xFF {
             *self.sr = *self.sr | self.status('C');
@@ -172,10 +169,16 @@ impl M6502 {
             *self.sr = *self.sr & !self.status('C');
         }
     }
+    pub fn STA(&mut self, mode: u8) {
+        **self.mode01(mode) = *self.ac;
+    }
+    pub fn LDA(&mut self, mode: u8) {
+        *self.ac = **self.mode01(mode);
+    }
+    pub fn CMP(&mut self, mode: u8) {
+        let data = **self.mode01(mode);
 
-    pub fn STA(&mut self, mode: u8) {}
-    pub fn LDA(&mut self, mode: u8) {}
-    pub fn CMP(&mut self, mode: u8) {}
+    }
     pub fn SBC(&mut self, mode: u8) {}
 
     // cc = 10
@@ -200,8 +203,6 @@ impl M6502 {
     // xxy10000; conditional branches x=neg,over,carry zero; cmp(x, y)
     fn CBRANCH(&mut self, s: char, n: u8) {
         // S = [NV-BDIZC], n=[01]
-        *self.pc += 1; 
-
         if (*self.sr & self.status(s)) == n { 
             *self.pc = *self.ram[*self.pc as usize] as u16;
         }
@@ -330,17 +331,18 @@ impl M6502 {
 
     pub fn run(&mut self, prog: &str) {
         for (i, byte) in decode(prog).unwrap().iter().enumerate() {
-            *(self.ram[(0x200+i) as usize]) = *byte;
+            *(self.ram[(0x0200+i) as usize]) = *byte;
         }
 
         // hacked
-        for _ in 0..10000 {
+        *self.pc = 0x0200;
+        for _ in 0..(prog.len() / 2) {
             self.match_instr(*self.pc as usize);
-            if *self.pc <= 0xFFFF { *self.pc += 1 };
+            *self.pc += 1;
+            //if *self.pc <= 0xFFFF { *self.pc += 1 };
         }
     }
 }
-
 
 impl fmt::Debug for M6502 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

@@ -27,7 +27,7 @@ fn main() {
 
     println!("{:?}", cpu);
 
-    cpu.run("A9004828A90008688D8713A9FF4828A90008688D861360");
-
+    //cpu.run("A9004828A90008688D8713A9FF4828A90008688D861360");
+    cpu.run("69FF6902"); // ac=0x01, sr=0x01
     println!("{:?}", cpu);
 }
