@@ -124,14 +124,14 @@ impl M6502 {
     // aaabbbcc - cc = 01
     pub fn ORA(&mut self, mode: u8) { 
         let data = **self.mode01(mode);
-        *self.ac = *self.ac | data;
+        *self.ac |= data;
 
         if *self.ac & 0b10000000 == 1 { 
-            *self.sr = *self.sr | self.status('N');
+            *self.sr |= self.status('N');
         }
         
         if *self.ac == 0 {
-            *self.sr = *self.sr | self.status('Z');
+            *self.sr |= self.status('Z');
         }
     }
     pub fn AND(&mut self, mode: u8) {
@@ -139,11 +139,11 @@ impl M6502 {
         *self.ac &= data;
 
         if *self.ac & 0b10000000 == 1 { 
-            *self.sr = *self.sr | self.status('N');
+            *self.sr |= self.status('N');
         }
         
         if *self.ac == 0 {
-            *self.sr = *self.sr | self.status('Z');
+            *self.sr |= self.status('Z');
         }
     }
     pub fn EOR(&mut self, mode: u8) {
@@ -164,9 +164,15 @@ impl M6502 {
         *self.ac = (sum & 0xFF) as u8;
 
         if sum > 0xFF {
-            *self.sr = *self.sr | self.status('C');
-        } else {
-            *self.sr = *self.sr & !self.status('C');
+            if *self.sr & self.status('C') == 1 {
+                *self.sr |= self.status('V');
+            } 
+            *self.sr ^= self.status('C');
+        } else if sum == 0 {
+            *self.sr |= self.status('Z');
+        } else if sum < 0 {
+            *self.sr |= self.status('N');
+            *self.sr ^= self.status('C');
         }
     }
     pub fn STA(&mut self, mode: u8) {
@@ -177,9 +183,34 @@ impl M6502 {
     }
     pub fn CMP(&mut self, mode: u8) {
         let data = **self.mode01(mode);
-
+        if *self.ac < data {
+            *self.sr ^= (self.status('Z') & self.status('C'));
+        } else if *self.ac == data {
+            *self.sr |= self.status('Z') | self.status('C');
+            *self.sr ^= self.status('N');
+        } else {
+            *self.sr ^= self.status('Z');
+            *self.sr |= self.status('C');
+        }
     }
-    pub fn SBC(&mut self, mode: u8) {}
+    pub fn SBC(&mut self, mode: u8) {
+        let data = **self.mode01(mode);
+        let sum = (*self.ac as u16 - data as u16) - (*self.sr & self.status('C') ) as u16;
+        *self.ac = (sum & 0xFF) as u8;
+
+        if sum > 0xFF {
+            if *self.sr & self.status('C') == 1 {
+                *self.sr |= self.status('V');
+            } else { 
+                *self.sr |= self.status('C');
+            }
+        } else if sum == 0 {
+            *self.sr |= self.status('Z');
+        } else if sum < 0 {
+            *self.sr |= self.status('N');
+            *self.sr ^= self.status('C');
+        }
+    }
 
     // cc = 10
     pub fn ASL(&mut self, mode: u8) {}
@@ -193,7 +224,7 @@ impl M6502 {
 
     // cc = 00
     pub fn BIT(&mut self, mode: u8) {}
-    pub fn JMP(&mut self, mode: u8) {}
+    pub fn JMP(&mut self, mode: u8) {}  
     pub fn AJMP(&mut self, mode: u8) {}
     pub fn STY(&mut self, mode: u8) {}
     pub fn LDY(&mut self, mode: u8) {}
